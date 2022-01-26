@@ -3,12 +3,12 @@ import re
 
 from flask import Flask, abort, request
 
-import message_db
+import message_db, game
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MemberJoinedEvent, MessageEvent, TextSendMessage
 
-with open('config.json') as f:
+with open('config.json', encoding='utf-8') as f:
     cfg = json.load(f)
 line_bot_api = LineBotApi(cfg['channel_access_token'])
 handler = WebhookHandler(cfg['channel_secret'])
@@ -38,6 +38,28 @@ def handle_message(event: MessageEvent):
             if re.match('^\/stat', text):
                 args = text.split()[1:]
                 result = message_db.count(event, *args)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+            elif re.match('^\/chance', text):
+                args = text.split()[1:]
+                result = game.chance(*args)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+            elif re.match('^\/fortune', text):
+                args = text.split()[1:]
+                result = game.fortune(*args)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+            elif re.match('^\/dice', text):
+                args = text.split()
+                if len(args)==1: args=1
+                else: args=args[1]
+                result = game.dice(args)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+            elif re.match('^\/pick', text):
+                args = text.split()[1:]
+                result = game.pick(*args)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+            elif re.match('^\/string', text):
+                args = text.split()[1:]
+                result = game.randstr(*args)
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
     finally:
         message_db.save(event, line_bot_api)
