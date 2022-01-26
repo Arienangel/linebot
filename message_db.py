@@ -1,4 +1,5 @@
 import warnings
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
@@ -6,7 +7,6 @@ import sqlite3
 import pandas as pd
 from linebot import LineBotApi
 from linebot.models import MessageEvent
-
 
 
 def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
@@ -35,7 +35,7 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
         if event.message.type == "text":
             cur.execute(f"UPDATE {dbid} SET text=? WHERE message_id=?;", [event.message.text, event.message.id])
         elif event.message.type == "sticker":  #https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/iPhone/sticker@2x.png
-            cur.execute(f"UPDATE {dbid} SET sticker_id=? WHERE message_id=?;", [event.message.sticker_id, event.message.package_id, event.message.id])
+            cur.execute(f"UPDATE {dbid} SET sticker_id=? WHERE message_id=?;", [event.message.sticker_id, event.message.id])
         else:
             if event.message.type == "image":
                 filename = f'{event.timestamp}.png'
@@ -61,9 +61,15 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
         con.close()
 
 
-def count(db, table, start=None, end=None, delta='D'):
+def count(event, start=None, end=None, delta='D'):
+    if event.source.type == "group":
+        db = "db/group.db"
+        dbid = event.source.group_id
+    elif event.source.type == "user":
+        db = "db/user.db"
+        dbid = event.source.user_id
     with sqlite3.connect(db) as con:
-        df = pd.read_sql(f'SELECT * FROM {table}', con, parse_dates={"time": {"unit": 'ms'}})[['time', 'user_name']]
+        df = pd.read_sql(f'SELECT * FROM {dbid}', con, parse_dates={"time": {"unit": 'ms'}})[['time', 'user_name']]
         df['time'] += pd.Timedelta('08:00:00')
         df['time'] = df['time'].dt.to_period(freq=delta).dt.to_timestamp()
         if start:

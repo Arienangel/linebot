@@ -6,7 +6,7 @@ from flask import Flask, abort, request
 import message_db
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import (JoinEvent, MemberJoinedEvent, MessageEvent, TextSendMessage)
+from linebot.models import MemberJoinedEvent, MessageEvent, TextSendMessage
 
 with open('config.json') as f:
     cfg = json.load(f)
@@ -33,26 +33,12 @@ def callback():
 @handler.add(MessageEvent)
 def handle_message(event: MessageEvent):
     try:
-        if event.message.type=='text':
-            text=event.message.text
+        if event.message.type == 'text':
+            text = event.message.text
             if re.match('^\/stat', text):
-                L=text.split()[1:]
-                if event.source.type == "group":
-                    db="db/group.db"
-                    dbid = event.source.group_id
-                elif event.source.type == "user":
-                    db="db/user.db"
-                    dbid = event.source.user_id
-                result=message_db.count(db, dbid, *L)
+                args = text.split()[1:]
+                result = message_db.count(event, *args)
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
-            elif re.match('^(\/喵|\/meow)' ,text):
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text='喵~', notification_disabled=True))
-            elif re.match('^(\/help)' ,text):
-                text='''\
-                    /help
-                    /meow
-                    /stat [time_start] [time_end] [interval(D)]'''
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text, notification_disabled=True))
     finally:
         message_db.save(event, line_bot_api)
 
