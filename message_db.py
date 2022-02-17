@@ -28,7 +28,7 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     elif event.message.type == "sticker":  #https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/iPhone/sticker@2x.png
         content = event.message.sticker_id
     else:
-        os.mkdir('data/')
+        os.makedirs('data/download', exist_ok=True)
         if event.message.type == "image":
             content = f'{event.timestamp}.png'
         elif event.message.type == "video":
@@ -39,15 +39,15 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
             content = f'{event.message.file_name}'
         # download
         try:
-            folder = f'data/{tb}/{event.timestamp}'
-            os.makedirs(folder)
+            folder = f'data/download/{tb}/{event.timestamp}'
+            os.makedirs(folder, exist_ok=True)
             with open(f'{folder}/{content}', 'wb') as f:
                 for chunk in line_bot_api.get_message_content(event.message.id, timeout=15).iter_content():
                     f.write(chunk)
         except:
             pass
     # db
-    with sqlite3.connect("db/chat.db") as con:
+    with sqlite3.connect("data/db/chat.db") as con:
         cur = con.cursor()
         if event.source.type == "user":
             cur.execute(f"CREATE TABLE IF NOT EXISTS {tb} (source, time, user_id, user_name, type, message_id, content);")
@@ -71,7 +71,7 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
 
 def count(event, start, end, delta='D'):
     tb = event.source.user_id if event.source.type == "user" else event.source.group_id if event.source.type == "group" else event.source.room_id
-    with sqlite3.connect("db/chat.db") as con:
+    with sqlite3.connect("data/db/chat.db") as con:
         df = pd.read_sql(f'SELECT * FROM {tb}', con, parse_dates={"time": {"unit": 'ms'}})[['time', 'user_name']]
     df['time'] += pd.Timedelta('08:00:00')
     df['time'] = df['time'].dt.to_period(freq=delta).dt.to_timestamp()
@@ -89,4 +89,4 @@ def count(event, start, end, delta='D'):
         df = df.append(df.sum(axis=0).rename("Total"))
         df = df.sort_values("Total", ascending=False)
         df.insert(0, "Rank", range(len(df)))
-    return df.to_csv(sep=',')
+    return '發言次數統計\n'+df.to_csv(sep=',')
