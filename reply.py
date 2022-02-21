@@ -1,11 +1,14 @@
 import json, os
 from collections import defaultdict
 
-D=defaultdict(dict)
-for id in os.listdir("data/reply"):
-    id = id.removesuffix(".json")
-    with open(f'data/reply/{id}.json', encoding='utf-8') as f:
-        D.update({id: json.load(f)})
+
+def load():
+    global D
+    D=defaultdict(dict)
+    for id in os.listdir("data/reply"):
+        id = id.removesuffix(".json")
+        with open(f'data/reply/{id}.json', encoding='utf-8') as f:
+            D.update({id: json.load(f)})
 
 
 def add(input, output, id):
@@ -52,6 +55,8 @@ def help(id):
 
 def reply(input, id):
     if input in D[id]:
-        return D[id][input]
+        return str(D[id][input])
     else:
         return False
+
+load()

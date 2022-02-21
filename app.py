@@ -21,7 +21,7 @@ handler = WebhookHandler(cfg['channel_secret'])
 banned = cfg["banned"]
 
 logging.basicConfig(level=logging.ERROR)
-logger=logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 
@@ -53,29 +53,33 @@ def handle_message(event: MessageEvent):
             id = event.source.room_id
             if event.source.user_id in banned["user"]: raise PermissionError
             if id in banned["room"]: raise PermissionError
-            
+
         if event.message.type == 'text':
             text: str = event.message.text
             #command
             try:
+                if re.match('^\/simulate', text):
+                    args = text.split(maxsplit=2)
+                    id = args[1]
+                    text = args[2]
                 if re.match('^\/help', text):
                     result = ("機器喵使用說明\n"
-                            "/help : 使用說明\n"
-                            "/stat [time_start] [time_end] [interval(D)]\n"
-                            "/chance (事項1 事項2 事項3...)\n"
-                            "/fortune (事項1 事項2 事項3...)\n"
-                            "/dice (次數)\n"
-                            "/pick [選項1] (選項2 選項3...)\n"
-                            "/string (長度) (0:數字,1:小寫,2:大寫,3:符號) (數量) ex: /string 8 012 3\n"
-                            "/reply add [input] [output]\n"
-                            "/reply edit [input] [output]\n"
-                            "/reply del [input] (input2...)\n"
-                            "/reply reset\n")
+                              "/help : 使用說明\n"
+                              "/stat [time_start] [time_end] [interval(D)]\n"
+                              "/chance (事項1 事項2 事項3...)\n"
+                              "/fortune (事項1 事項2 事項3...)\n"
+                              "/dice (次數)\n"
+                              "/pick [選項1] (選項2 選項3...)\n"
+                              "/string (長度) (0:數字,1:小寫,2:大寫,3:符號) (數量) ex: /string 8 012 3\n"
+                              "/reply add [input] [output]\n"
+                              "/reply edit [input] [output]\n"
+                              "/reply del [input] (input2...)\n"
+                              "/reply reset\n")
                     result += reply.help(id)
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
                 elif re.match('^\/stat', text):
                     args = text.split()[1:]
-                    result = message_db.count(event, *args)
+                    result = message_db.count(id, *args)
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
                 elif re.match('^\/chance', text):
                     args = text.split()[1:]
@@ -110,6 +114,8 @@ def handle_message(event: MessageEvent):
                             reply.delete(i, id)
                     elif L[1] == 'reset':
                         reply.reset(id)
+                    elif L[1] == 'reload':
+                        reply.load()
                     elif L[1] == 'json':
                         reply.add_json(text.removeprefix('/reply json'), id)
             except Exception as E:
@@ -122,7 +128,7 @@ def handle_message(event: MessageEvent):
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
             except Exception as E:
                 logger.error('Message "%s" caused error "%s"', text, E)
-                
+
     except PermissionError:
         pass
     finally:
