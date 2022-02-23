@@ -5,7 +5,7 @@ import logging
 from pyngrok import ngrok
 from flask import Flask, abort, request
 
-import message_db, game, reply
+import message_db, game, reply, scoreboard
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MemberJoinedEvent, MessageEvent, TextSendMessage
@@ -71,16 +71,43 @@ def handle_message(event: MessageEvent):
                               "/dice (次數)\n"
                               "/pick [選項1] (選項2 選項3...)\n"
                               "/string (長度) (0:數字,1:小寫,2:大寫,3:符號) (數量) ex: /string 8 012 3\n"
-                              "/reply add [input] [output]\n"
-                              "/reply edit [input] [output]\n"
-                              "/reply del [input] (input2...)\n"
-                              "/reply reset\n")
+                              "/reply\n"
+                              "    add [input] [output]\n"
+                              "    del [input1] (input2...)\n"
+                              "    reset\n"
+                              "/scoreboard or /sb\n"
+                              "    (@name) (object) ((+/-/)point)\n"
+                              "    del [name] (object)\n"
+                              "    reset\n")
                     result += reply.help(id)
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
                 elif re.match('^\/stat', text):
                     args = text.split()[1:]
                     result = message_db.count(id, *args)
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+                elif re.match('^\/(scoreboard|sb)', text):
+                    L = text.split()
+                    if len(L)==1:
+                        result = scoreboard.get(id)
+                        result = f'Scoreboard: ' + ', '.join([i[0] for i in result])
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+                    elif re.match('^@', L[1]):
+                        name = L[1].removeprefix('@')
+                        if len(L)==2 or len(L)==3:
+                            result = scoreboard.get(id, name)
+                            result = f'Scoreboard: {name}\n' + '\n'.join([f'{i}: {j}' for i, j in result])
+                            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+                        elif len(L)==4:
+                            if L[3][0] == '+':
+                                scoreboard.edit(id, name, L[2], L[3], '+')
+                            elif L[3][0] == '-':
+                                scoreboard.edit(id, name, L[2], L[3], '-')
+                            elif re.match('^\d', L[3]):
+                                scoreboard.edit(id, name, L[2], L[3], 'edit')
+                    elif L[1] == "del":
+                        scoreboard.delete(id, *L[2:])
+                    elif L[1] == 'reset':
+                        scoreboard.reset(id)
                 elif re.match('^\/chance', text):
                     args = text.split()[1:]
                     result = game.chance(*args)
@@ -106,24 +133,20 @@ def handle_message(event: MessageEvent):
                 elif re.match('^\/reply', text):
                     L = text.split()
                     if L[1] == "add":
-                        reply.add(L[2], L[3], id)
-                    elif L[1] == "edit":
-                        reply.edit(L[2], L[3], id)
+                        reply.add(id, L[2], L[3])
                     elif L[1] == "del":
                         for i in L[2:]:
-                            reply.delete(i, id)
+                            reply.delete(id, i)
                     elif L[1] == 'reset':
                         reply.reset(id)
-                    elif L[1] == 'reload':
-                        reply.load()
                     elif L[1] == 'json':
-                        reply.add_json(text.removeprefix('/reply json'), id)
+                        reply.add_json(id, text.removeprefix('/reply json'))
             except Exception as E:
                 logger.error('Message "%s" caused error "%s"', text, E)
 
             # auto reply
             try:
-                result = reply.reply(text, id)
+                result = reply.reply(id, text)
                 if result:
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
             except Exception as E:
