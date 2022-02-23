@@ -1,62 +1,50 @@
-import json, os
-from collections import defaultdict
+import json
+import sqlite3
+
+path = "data/reply/reply.db"
 
 
-def load():
-    global D
-    D=defaultdict(dict)
-    for id in os.listdir("data/reply"):
-        id = id.removesuffix(".json")
-        with open(f'data/reply/{id}.json', encoding='utf-8') as f:
-            D.update({id: json.load(f)})
+def add(id, input, output):
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        cur.execute(f'CREATE TABLE IF NOT EXISTS "{id}" ("input" UNIQUE, "output");')
+        cur.execute(f'REPLACE INTO {id} (input, output) VALUES (?, ?);', [input, output])
 
 
-def add(input, output, id):
-    if input not in D[id]:
-        D[id].update({input: output})
-        with open(f'data/reply/{id}.json', mode='wt', encoding='utf-8') as f:
-            json.dump(D[id], f, ensure_ascii=False)
-
-def add_json(s: str, id):
-    d=json.loads(s)
-    if type(d) is dict:
-        D[id].update(d)
-        with open(f'data/reply/{id}.json', mode='wt', encoding='utf-8') as f:
-            json.dump(D[id], f, ensure_ascii=False)
-
-def edit(input, output, id):
-    if input in D[id]:
-        D[id][input] = output
-        with open(f'data/reply/{id}.json', mode='wt', encoding='utf-8') as f:
-            json.dump(D[id], f, ensure_ascii=False)
+def add_json(id, json_string: str):
+    s = json.loads(json_string)
+    if type(s) is dict:
+        s = [s]
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        cur.execute(f'CREATE TABLE IF NOT EXISTS "{id}" ("input" UNIQUE, "output");')
+        cur.executemany(f'REPLACE INTO {id} (input, output) VALUES (:input, :output);', s)
 
 
-def delete(input, id):
-    if input in D[id]:
-        D[id].pop(input)
-        with open(f'data/reply/{id}.json', mode='wt', encoding='utf-8') as f:
-            json.dump(D[id], f, ensure_ascii=False)
+def delete(id, input):
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        cur.execute(f'DELETE FROM {id} WHERE input=?;', [input])
 
 
 def reset(id):
-    if id in D:
-        D.pop(id)
-    if os.path.exists(f"data/reply/{id}.json"):
-        os.remove(f"data/reply/{id}.json")
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        cur.execute(f'DROP TABLE {id};')
 
 
 def help(id):
-    if id in D:
-        text='\n'.join(D[id].keys())
-        return text
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        r = cur.execute(f'SELECT input FROM {id};')
+    return '\n'.join([str(i[0]) for i in r.fetchall()])
+
+
+def reply(id, input):
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        r = cur.execute(f'SELECT output FROM (SELECT input, output FROM {id} WHERE input=?);', [input]).fetchone()
+    if r:
+        return str(r[0])
     else:
-        return ''
-
-
-def reply(input, id):
-    if input in D[id]:
-        return str(D[id][input])
-    else:
-        return False
-
-load()
+        return None
