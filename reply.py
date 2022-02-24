@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-path = "data/reply/reply.db"
+path = "data/reply.db"
 
 
 def add(id, input, output):
@@ -14,7 +14,7 @@ def add(id, input, output):
 def add_json(id, json_string: str):
     s = json.loads(json_string)
     if type(s) is dict:
-        s = [s]
+        s = [{'input': key, 'output': value} for key, value in s.items()]
     with sqlite3.connect(path) as con:
         cur = con.cursor()
         cur.execute(f'CREATE TABLE IF NOT EXISTS "{id}" ("input" UNIQUE, "output");')

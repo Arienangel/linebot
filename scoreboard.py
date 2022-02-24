@@ -1,11 +1,12 @@
 import sqlite3
 
-path = "data/scoreboard/scoreboard.db"
+path = "data/scoreboard.db"
 
 
 def get(id, name=None, object=None):
     with sqlite3.connect(path) as con:
         cur = con.cursor()
+        cur.execute(f'CREATE TABLE IF NOT EXISTS "{id}" ("name", "object", "points" INTEGER);')
         if object:
             r = cur.execute(f'SELECT object, points FROM (SELECT * FROM {id} WHERE (name=? and object=?));', [name, object])
             return r.fetchone()
