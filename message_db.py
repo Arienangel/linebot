@@ -5,10 +5,13 @@ warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
 import os
 import sqlite3
+import threading
+
 import pandas as pd
+from requests.exceptions import ReadTimeout
+
 from linebot import LineBotApi
 from linebot.models import MessageEvent
-from requests.exceptions import ReadTimeout
 
 
 def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
@@ -44,17 +47,21 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
             content = f'{event.message.file_name}'
         else:
             return None
-        # download
-        try:
-            folder = f'data/download/{tb}/{event.timestamp}'
-            os.makedirs(folder, exist_ok=True)
-            with open(f'{folder}/{content}', 'wb') as f:
-                for chunk in line_bot_api.get_message_content(event.message.id, timeout=15).iter_content():
-                    f.write(chunk)
-        except ReadTimeout:
-            pass
+
+        def download():
+            try:
+                folder = f'data/download/{tb}/{event.timestamp}'
+                os.makedirs(folder, exist_ok=True)
+                with open(f'{folder}/{content}', 'wb') as f:
+                    for chunk in line_bot_api.get_message_content(event.message.id, timeout=15).iter_content():
+                        f.write(chunk)
+            except ReadTimeout:
+                pass
+
+        threading.Thread(target=download).start()
+
     # db
-    with sqlite3.connect("data/db/chat.db") as con:
+    with sqlite3.connect("data/chat.db") as con:
         cur = con.cursor()
         if event.source.type == "user":
             cur.execute(f"CREATE TABLE IF NOT EXISTS {tb} (source, time, user_id, user_name, type, message_id, content);")
@@ -80,7 +87,7 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
 
 
 def count(id, start, end, delta='D'):
-    with sqlite3.connect("data/db/chat.db") as con:
+    with sqlite3.connect("data/chat.db") as con:
         df = pd.read_sql(f'SELECT * FROM {id}', con, parse_dates={"time": {"unit": 'ms'}})[['time', 'user_name']]
     df['time'] += pd.Timedelta('08:00:00')
     df['time'] = df['time'].dt.to_period(freq=delta).dt.to_timestamp()

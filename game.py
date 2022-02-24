@@ -1,16 +1,18 @@
-import string
+import json
+import os
 import random
 import re
-import json
+import string
+
 import numpy as np
+from dotenv import load_dotenv
 
+load_dotenv('config.env')
 
-with open("config.json", encoding="utf-8") as f:
-    cfg = json.load(f)["game"]
-banlist = cfg["banlist"]
-prob_range = cfg["prob_range"]
-fortune_key = cfg["fortune_key"]
-fortune_prob = cfg["fortune_prob"]
+banlist = json.loads(os.getenv("banlist"))
+prob_range = json.loads(os.getenv("prob_range"))
+fortune_key = json.loads(os.getenv("fortune_key"))
+fortune_prob = json.loads(os.getenv("fortune_prob"))
 
 
 def bancheck(banned: list, check: list):
@@ -79,13 +81,14 @@ def pick(*args, format=True, check=True):
     else:
         return "窩不知道"
 
+
 def dice(n, format=True):
-    A=np.random.randint(1, 7, int(n))
-    if n==1:
+    A = np.random.randint(1, 7, int(n))
+    if n == 1:
         return str(A[0])
     else:
         if format:
-            B=np.arange(1, int(n)+1, 1)
+            B = np.arange(1, int(n) + 1, 1)
             return '\n'.join(['{}: {}'.format(*l) for l in np.stack([B, A], axis=-1)])
         else:
             return A
