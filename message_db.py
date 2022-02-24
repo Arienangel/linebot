@@ -19,18 +19,19 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     try:
         if event.source.type == "user":
             profile = line_bot_api.get_profile(event.source.user_id, timeout=15)
-            tb = event.source.user_id
+            id = event.source.user_id
         elif event.source.type == "group":
             group = line_bot_api.get_group_summary(event.source.group_id, timeout=15)
             profile = line_bot_api.get_group_member_profile(event.source.group_id, event.source.user_id, timeout=15)
-            tb = event.source.group_id
+            id = event.source.group_id
         elif event.source.type == "room":
             profile = line_bot_api.get_room_member_profile(event.source.room_id, event.source.user_i, timeout=15)
-            tb = event.source.room_id
+            id = event.source.room_id
     except ReadTimeout:
         profile = None
         group = None
-    # message
+    # message content
+    time = str(pd.Timestamp(event.timestamp, unit='ms') + pd.Timedelta('08:00:00')).removesuffix('000').replace(':', '')
     if event.message.type == "text":
         content = event.message.text
     elif event.message.type == "sticker":  #https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/iPhone/sticker@2x.png
@@ -38,11 +39,11 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     else:
         os.makedirs('data/download', exist_ok=True)
         if event.message.type == "image":
-            content = f'{event.timestamp}.png'
+            content = f'{time}.png'
         elif event.message.type == "video":
-            content = f'{event.timestamp}.mp4'
+            content = f'{time}.mp4'
         elif event.message.type == "audio":
-            content = f'{event.timestamp}.aac'
+            content = f'{time}.aac'
         elif event.message.type == "file":
             content = f'{event.message.file_name}'
         else:
@@ -50,7 +51,7 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
 
         def download():
             try:
-                folder = f'data/download/{tb}/{event.timestamp}'
+                folder = f'data/download/{id}/{time}'
                 os.makedirs(folder, exist_ok=True)
                 with open(f'{folder}/{content}', 'wb') as f:
                     for chunk in line_bot_api.get_message_content(event.message.id, timeout=15).iter_content():
@@ -64,32 +65,31 @@ def save(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     with sqlite3.connect("data/chat.db") as con:
         cur = con.cursor()
         if event.source.type == "user":
-            cur.execute(f"CREATE TABLE IF NOT EXISTS {tb} (source, time, user_id, user_name, type, message_id, content);")
-            cur.execute(f"INSERT INTO {tb} (source, time, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?);", [
-                event.source.type, event.timestamp, event.source.user_id,
+            cur.execute(f"CREATE TABLE IF NOT EXISTS {id} (source, time, user_id, user_name, type, message_id, content);")
+            cur.execute(f"INSERT INTO {id} (source, time, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?);", [
+                event.source.type, time, event.source.user_id,
                 getattr(profile, "display_name", None), event.message.type, event.message.id, content
             ])
         elif event.source.type == "group":
-            cur.execute(f"CREATE TABLE IF NOT EXISTS {tb} (source, time, group_id, group_name, user_id, user_name, type, message_id, content);")
+            cur.execute(f"CREATE TABLE IF NOT EXISTS {id} (source, time, group_id, group_name, user_id, user_name, type, message_id, content);")
             cur.execute(
-                f"INSERT INTO {tb} (source, time, group_id, group_name, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                f"INSERT INTO {id} (source, time, group_id, group_name, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
                 [
-                    event.source.type, event.timestamp, event.source.group_id,
+                    event.source.type, time, event.source.group_id,
                     getattr(group, "group_name", None), event.source.user_id,
                     getattr(profile, "display_name", None), event.message.type, event.message.id, content
                 ])
         elif event.source.type == "room":
-            cur.execute(f"CREATE TABLE IF NOT EXISTS {tb} (source, time, room_id, user_id, user_name, type, message_id, content);")
-            cur.execute(f"INSERT INTO {tb} (source, time, room_id, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?);", [
-                event.source.type, event.timestamp, event.source.room_id, event.source.user_id,
+            cur.execute(f"CREATE TABLE IF NOT EXISTS {id} (source, time, room_id, user_id, user_name, type, message_id, content);")
+            cur.execute(f"INSERT INTO {id} (source, time, room_id, user_id, user_name, type, message_id, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?);", [
+                event.source.type, time, event.source.room_id, event.source.user_id,
                 getattr(profile, "display_name", None), event.message.type, event.message.id, content
             ])
 
 
 def count(id, start, end, delta='D'):
     with sqlite3.connect("data/chat.db") as con:
-        df = pd.read_sql(f'SELECT * FROM {id}', con, parse_dates={"time": {"unit": 'ms'}})[['time', 'user_name']]
-    df['time'] += pd.Timedelta('08:00:00')
+        df = pd.read_sql(f'SELECT * FROM {id}', con, parse_dates=["time"])[['time', 'user_name']]
     df['time'] = df['time'].dt.to_period(freq=delta).dt.to_timestamp()
     df = df[df["time"] >= pd.Timestamp(start)]
     df = df[df["time"] < pd.Timestamp(end)]

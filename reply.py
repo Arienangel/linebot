@@ -36,14 +36,19 @@ def reset(id):
 def help(id):
     with sqlite3.connect(path) as con:
         cur = con.cursor()
-        r = cur.execute(f'SELECT input FROM {id};')
+        try:
+            r = cur.execute(f'SELECT input FROM {id};')
+        except:
+            return ''
     return '\n'.join([str(i[0]) for i in r.fetchall()])
 
 
 def reply(id, input):
     with sqlite3.connect(path) as con:
         cur = con.cursor()
-        r = cur.execute(f'SELECT output FROM (SELECT input, output FROM {id} WHERE input=?);', [input]).fetchone()
+        try:
+            r = cur.execute(f'SELECT output FROM (SELECT input, output FROM {id} WHERE input=?);', [input]).fetchone()
+        except: return None
     if r:
         return str(r[0])
     else:
