@@ -25,6 +25,7 @@ line_bot_api = LineBotApi(os.getenv('channel_access_token'))
 port = int(os.getenv('port'))
 handler = WebhookHandler(os.getenv('channel_secret'))
 banned = json.loads(os.getenv("banned"))
+allow_push= json.loads(os.getenv("allow_push"))
 
 app = Flask(__name__)
 
@@ -80,7 +81,7 @@ def handle_message(event: MessageEvent):
                 if re.match('^\/simulate', text):
                     args = text.split(maxsplit=2)
                     id = args[1]
-                    text = args[2]
+                    text:str = args[2]
                 if re.match('^\/(help|\?)', text):
                     result = ("機器喵使用說明\n"
                               "/help : 使用說明\n"
@@ -100,6 +101,10 @@ def handle_message(event: MessageEvent):
                               "    reset\n")
                     result += reply.help(id)
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result, notification_disabled=True))
+                elif re.match('^\/push', text):
+                    if event.source.user_id in allow_push:
+                        args = text.split(maxsplit=2)
+                        line_bot_api.push_message(args[1], TextSendMessage(text=args[2], notification_disabled=True))                    
                 elif re.match('^\/stat', text):
                     args = text.split()[1:]
                     result = message_db.count(id, *args)
