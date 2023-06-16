@@ -3,6 +3,7 @@ app:
     port: 5000
     channel_access_token: ""
     channel_secret: ""
+  download: True # download attachment
   command: # bot commmand
     help:
       message: |
@@ -23,7 +24,7 @@ app:
       temperature: [0.8, 1.2] # number or [min, max]
 
 # module: chatgpt
-chatgpt: 
+chatgpt:
   token: ""
   max_tokens: 1000
 

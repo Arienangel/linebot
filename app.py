@@ -1,6 +1,8 @@
+import os
 import re
-import aiosqlite
 
+import aiofiles
+import aiosqlite
 import dateutil.parser
 import dateutil.relativedelta
 import yaml
@@ -21,7 +23,7 @@ line_bot_api = AioLineBotApi(conf['bot']['channel_access_token'])
 handler = AsyncWebhookHandler(conf['bot']['channel_secret'])
 
 
-@app.route("/callback", methods=['POST'])
+@app.route("/", methods=['POST'])
 async def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
@@ -110,10 +112,26 @@ async def handle_message(event: MessageEvent):
     async def record_message():
         if event.message.type == 'text': content = event.message.text
         elif event.message.type == 'sticker': content = event.message.sticker_id
+        else:
+            content = None
+            if event.message.content_provider.type == 'line':
+                if conf['download']: await download()
         async with aiosqlite.connect(f'data/messages.db') as db:
             await db.execute(f'CREATE TABLE IF NOT EXISTS `{GID}` (id, time, user, type, content);')
             await db.execute(f'INSERT INTO `{GID}` VALUES (?,?,?,?,?);', [event.message.id, event.timestamp, event.source.user_id, event.message.type, content])
             await db.commit()
+
+    async def download():
+        try:
+            folder = f'data/attachment/{GID}'
+            os.makedirs(folder, exist_ok=True)
+            data = await line_bot_api.get_message_content_async(event.message.id, timeout=30)
+            ext = data.content_type.split('/')[1]
+            async with aiofiles.open(f'{folder}/{event.timestamp}.{ext}', mode='wb') as f:
+                async for chunk in data.iter_content():
+                    await f.write(chunk)
+        except:
+            pass
 
     GID = event.source.group_id if event.source.type == 'group' else event.source.room_id if event.source.type == 'room' else event.source.user_id
     await record_message()
@@ -134,4 +152,6 @@ async def get_user_profile(UID: str, GID: str):
 
 
 if __name__ == "__main__":
+    # waitress-serve --host 0.0.0.0 --port $PORT app:app
+    # debug only
     app.run(host='0.0.0.0', port=conf['bot']['port'], debug=True)
