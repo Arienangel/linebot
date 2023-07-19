@@ -112,26 +112,31 @@ async def handle_message(event: MessageEvent):
     async def record_message():
         if event.message.type == 'text': content = event.message.text
         elif event.message.type == 'sticker': content = event.message.sticker_id
-        else:
+        elif event.message.type in ['image', 'video', 'audio']:
             content = None
             if event.message.content_provider.type == 'line':
                 if conf['download']: await download()
+        elif event.message.type =='file':
+            content = None
+            if conf['download']: await download()
+        else:
+            pass
         async with aiosqlite.connect(f'data/messages.db') as db:
             await db.execute(f'CREATE TABLE IF NOT EXISTS `{GID}` (id, time, user, type, content);')
             await db.execute(f'INSERT INTO `{GID}` VALUES (?,?,?,?,?);', [event.message.id, event.timestamp, event.source.user_id, event.message.type, content])
             await db.commit()
 
     async def download():
+        folder = f'data/attachment/{GID}'
+        os.makedirs(folder, exist_ok=True)
         try:
-            folder = f'data/attachment/{GID}'
-            os.makedirs(folder, exist_ok=True)
             data = await line_bot_api.get_message_content_async(event.message.id, timeout=30)
             ext = data.content_type.split('/')[1]
             async with aiofiles.open(f'{folder}/{event.timestamp}.{ext}', mode='wb') as f:
                 async for chunk in data.iter_content():
                     await f.write(chunk)
-        except:
-            pass
+        finally:
+            await data.response.close()
 
     GID = event.source.group_id if event.source.type == 'group' else event.source.room_id if event.source.type == 'room' else event.source.user_id
     await record_message()
