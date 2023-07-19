@@ -132,7 +132,7 @@ async def handle_message(event: MessageEvent):
         try:
             data = await line_bot_api.get_message_content_async(event.message.id, timeout=30)
             ext = data.content_type.split('/')[1]
-            async with aiofiles.open(f'{folder}/{event.timestamp}.{ext}', mode='wb') as f:
+            async with aiofiles.open(f'{folder}/{event.message.id}.{ext}', mode='wb') as f:
                 async for chunk in data.iter_content():
                     await f.write(chunk)
         finally:
