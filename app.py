@@ -116,7 +116,7 @@ async def handle_message(event: MessageEvent):
             content = None
             if event.message.content_provider.type == 'line':
                 if conf['download']: await download()
-        elif event.message.type =='file':
+        elif event.message.type == 'file':
             content = None
             if conf['download']: await download()
         else:
@@ -131,10 +131,15 @@ async def handle_message(event: MessageEvent):
         os.makedirs(folder, exist_ok=True)
         try:
             data = await line_bot_api.get_message_content_async(event.message.id, timeout=30)
-            ext = data.content_type.split('/')[1]
-            async with aiofiles.open(f'{folder}/{event.message.id}.{ext}', mode='wb') as f:
+            if data.content_type:
+                ext = '.' + data.content_type.split('/')[1]
+            else:
+                ext = ''
+            async with aiofiles.open(f'{folder}/{event.message.id}{ext}', mode='wb') as f:
                 async for chunk in data.iter_content():
                     await f.write(chunk)
+        except Exception as E:
+            pass
         finally:
             await data.response.close()
 
