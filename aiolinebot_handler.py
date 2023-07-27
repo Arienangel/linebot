@@ -1,5 +1,5 @@
-from linebot import WebhookHandler
-from linebot.models import MessageEvent
+from linebot.v3 import WebhookHandler
+from linebot.v3.webhooks import MessageEvent
 
 
 class AsyncWebhookHandler(WebhookHandler):

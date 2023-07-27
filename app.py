@@ -10,16 +10,16 @@ from flask import Flask, abort, request
 
 import chatgpt
 import games
-from aiolinebot import AioLineBotApi
 from aiolinebot_handler import AsyncWebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MemberJoinedEvent, MessageEvent, TextSendMessage
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import AsyncApiClient, AsyncMessagingApi, AsyncMessagingApiBlob, Configuration, ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import MessageEvent, MemberJoinedEvent
 
 with open('config/app.yaml', encoding='utf-8') as f:
     conf = yaml.load(f, yaml.SafeLoader)['app']
 
 app = Flask(__name__)
-line_bot_api = AioLineBotApi(conf['bot']['channel_access_token'])
+configuration = Configuration(access_token=conf['bot']['channel_access_token'])
 handler = AsyncWebhookHandler(conf['bot']['channel_secret'])
 
 
@@ -39,23 +39,23 @@ async def handle_message(event: MessageEvent):
 
     async def command():
         if re.match('/help', event.message.text):
-            await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=conf['command']['help']['message']))
+            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=conf['command']['help']['message'])]))
         elif re.match('/gpt', event.message.text):
             ctx = event.message.text.split(' ', maxsplit=1)[1]
             gpt, temp = await chatgpt.gpt35(ctx, conf['command']['gpt']['temperature'])
-            await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=f'{gpt.choices[0].message.content}'))
+            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{gpt.choices[0].message.content}')]))
         elif re.match('/chance', event.message.text):
             ctx = event.message.text.split(' ', maxsplit=1)
-            await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {round(games.chance(), 2):.0%}'))
+            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {round(games.chance(), 2):.0%}')]))
         elif re.match('/dice', event.message.text):
-            await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=f'{games.pick(list(range(1, 7)))}'))
+            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{games.pick(list(range(1, 7)))}')]))
         elif re.match('/fortune', event.message.text):
             ctx = event.message.text.split(' ', maxsplit=1)
-            await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {games.fortune()}'))
+            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {games.fortune()}')]))
         elif re.match('/pick', event.message.text):
             ctx = event.message.text.split(' ')
             if len(ctx) > 1:
-                await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=f'選擇: {games.pick(list(ctx[1:]))}'))
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'選擇: {games.pick(list(ctx[1:]))}')]))
         elif re.match('/echo', event.message.text):
             ctx = event.message.text.split(' ', maxsplit=2)[1:]
             async with aiosqlite.connect('data/echo.db') as db:
@@ -64,12 +64,12 @@ async def handle_message(event: MessageEvent):
                 if ctx[0] == 'ls':
                     async with db.execute(f'SELECT * FROM `{GID}`;') as cur:
                         L = [f'{row[0]} -> {row[1]}' async for row in cur]
-                    if len(L) > 0: await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text='echo: \n' + '\n'.join(L)))
-                    else: await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text='echo: None'))
+                    if len(L) > 0: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: \n' + '\n'.join(L))]))
+                    else: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: None')]))
                 elif ctx[0] == 'add':
                     req, res = ctx[1].split(' ', maxsplit=1)
                     if req.startswith('/'):
-                        await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text='不可以使用"/"開頭'))
+                        await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='不可以使用"/"開頭')]))
                     else:
                         await db.execute(f'INSERT OR REPLACE INTO `{GID}` VALUES (?, ?);', [req, res])
                         await db.commit()
@@ -90,16 +90,15 @@ async def handle_message(event: MessageEvent):
                     async for row in cur:
                         try:
                             profile = await get_user_profile(row[0], GID)
-                            name = getattr(profile, "display_name", None)
-                            if name is None: name = row[0]
-                            else: L.append(f'{name}: {row[1]}')
+                            name = getattr(profile, "display_name", row[0])
+                            L.append(f'{name}: {row[1]}')
                         except:
                             continue
             text = f'{start.strftime("%Y/%m/%d %H:%M:%S")}~{end.strftime("%Y/%m/%d %H:%M:%S")}\n'
             if L:
-                await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=text + '\n'.join(L)))
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + '\n'.join(L))]))
             else:
-                await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=text + 'None'))
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + 'None')]))
 
     async def echo():
         async with aiosqlite.connect('data/echo.db') as db:
@@ -107,9 +106,27 @@ async def handle_message(event: MessageEvent):
             await db.commit()
             async with db.execute(f'SELECT response FROM `{GID}` WHERE request=?;', [event.message.text]) as cur:
                 L = await cur.fetchone()
-            if L: await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text=L[0]))
+            if L: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=L[0])]))
 
     async def record_message():
+
+        async def download():
+            folder = f'data/attachment/{GID}'
+            os.makedirs(folder, exist_ok=True)
+            try:
+                api_blob = AsyncMessagingApiBlob(client)
+                data = await api_blob.get_message_content_with_http_info(event.message.id)
+                if hasattr(event.message, 'file_name'):
+                    ext = '.' + event.message.file_name.rsplit('.', maxsplit=1)[-1]
+                elif data.headers['Content-Type']:
+                    ext = '.' + data.headers['Content-Type'].split('/')[1]
+                else:
+                    ext = ''
+                async with aiofiles.open(f'{folder}/{event.message.id}{ext}', mode='wb') as f:
+                    await f.write(data.data)
+            except Exception as E:
+                pass
+
         if event.message.type == 'text': content = event.message.text
         elif event.message.type == 'sticker': content = event.message.sticker_id
         elif event.message.type in ['image', 'video', 'audio']:
@@ -126,39 +143,28 @@ async def handle_message(event: MessageEvent):
             await db.execute(f'INSERT INTO `{GID}` VALUES (?,?,?,?,?);', [event.message.id, event.timestamp, event.source.user_id, event.message.type, content])
             await db.commit()
 
-    async def download():
-        folder = f'data/attachment/{GID}'
-        os.makedirs(folder, exist_ok=True)
-        try:
-            data = await line_bot_api.get_message_content_async(event.message.id, timeout=30)
-            if data.content_type:
-                ext = '.' + data.content_type.split('/')[1]
-            else:
-                ext = ''
-            async with aiofiles.open(f'{folder}/{event.message.id}{ext}', mode='wb') as f:
-                async for chunk in data.iter_content():
-                    await f.write(chunk)
-        except Exception as E:
-            pass
-        finally:
-            await data.response.close()
-
-    GID = event.source.group_id if event.source.type == 'group' else event.source.room_id if event.source.type == 'room' else event.source.user_id
-    await record_message()
-    if event.message.type == 'text':
-        if event.message.text.startswith('/'): await command()
-        else: await echo()
+    async with AsyncApiClient(configuration) as client:
+        line_bot_api = AsyncMessagingApi(client)
+        GID = event.source.group_id if event.source.type == 'group' else event.source.room_id if event.source.type == 'room' else event.source.user_id
+        await record_message()
+        if event.message.type == 'text':
+            if event.message.text.startswith('/'): await command()
+            else: await echo()
 
 
 @handler.add(MemberJoinedEvent)
 async def greeting(event: MemberJoinedEvent):
-    await line_bot_api.reply_message_async(event.reply_token, TextSendMessage(text='喵~', notification_disabled=True))
+    async with AsyncApiClient(configuration) as client:
+        line_bot_api = AsyncMessagingApi(client)
+        await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='喵~', notification_disabled=True)]))
 
 
 async def get_user_profile(UID: str, GID: str):
-    if GID.startswith('U'): return await line_bot_api.get_profile_async(UID)
-    elif GID.startswith('C'): return await line_bot_api.get_group_member_profile_async(GID, UID)
-    elif GID.startswith('R'): return await line_bot_api.get_room_member_profile_async(GID, UID)
+    async with AsyncApiClient(configuration) as client:
+        line_bot_api = AsyncMessagingApi(client)
+        if GID.startswith('U'): return await line_bot_api.get_profile(UID)
+        elif GID.startswith('C'): return await line_bot_api.get_group_member_profile(GID, UID)
+        elif GID.startswith('R'): return await line_bot_api.get_room_member_profile(GID, UID)
 
 
 if __name__ == "__main__":
