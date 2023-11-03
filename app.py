@@ -43,7 +43,7 @@ async def handle_message(event: MessageEvent):
     async def command():
         # check forbidden words
         for kw in conf['command']['blacklist']:
-            if kw in event.message.text: break
+            if kw in event.message.text: return
 
         # check disabled commands
         cmd = event.message.text.split(' ', maxsplit=1)[0]
