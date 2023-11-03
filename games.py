@@ -19,3 +19,7 @@ def fortune():
 
 def pick(items):
     return items[math.floor(random.random() * len(items))]
+
+
+def dice(n: int = 6):
+    return random.randint(1, n)

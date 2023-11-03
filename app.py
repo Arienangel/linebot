@@ -3,10 +3,13 @@ import re
 
 import aiofiles
 import aiosqlite
+import aiohttp
 import dateutil.parser
 import dateutil.relativedelta
+import urllib.parse
 import yaml
 from flask import Flask, abort, request
+from pyquery import PyQuery as pq
 
 import chatgpt
 import games
@@ -38,67 +41,112 @@ async def callback():
 async def handle_message(event: MessageEvent):
 
     async def command():
-        if re.match('/help', event.message.text):
-            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=conf['command']['help']['message'])]))
-        elif re.match('/gpt', event.message.text):
-            ctx = event.message.text.split(' ', maxsplit=1)[1]
-            gpt, temp = await chatgpt.gpt35(ctx, conf['command']['gpt']['temperature'])
-            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{gpt.choices[0].message.content}')]))
-        elif re.match('/chance', event.message.text):
-            ctx = event.message.text.split(' ', maxsplit=1)
-            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {round(games.chance(), 2):.0%}')]))
-        elif re.match('/dice', event.message.text):
-            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{games.pick(list(range(1, 7)))}')]))
-        elif re.match('/fortune', event.message.text):
-            ctx = event.message.text.split(' ', maxsplit=1)
-            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {games.fortune()}')]))
-        elif re.match('/pick', event.message.text):
-            ctx = event.message.text.split(' ')
-            if len(ctx) > 1:
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'選擇: {games.pick(list(ctx[1:]))}')]))
-        elif re.match('/echo', event.message.text):
-            ctx = event.message.text.split(' ', maxsplit=2)[1:]
-            async with aiosqlite.connect('data/echo.db') as db:
-                await db.execute(f'CREATE TABLE IF NOT EXISTS  `{GID}` ("request" UNIQUE, "response");')
-                await db.commit()
-                if ctx[0] == 'ls':
-                    async with db.execute(f'SELECT * FROM `{GID}`;') as cur:
-                        L = [f'{row[0]} -> {row[1]}' async for row in cur]
-                    if len(L) > 0: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: \n' + '\n'.join(L))]))
-                    else: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: None')]))
-                elif ctx[0] == 'add':
-                    req, res = ctx[1].split(' ', maxsplit=1)
-                    if req.startswith('/'):
-                        await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='不可以使用"/"開頭')]))
-                    else:
-                        await db.execute(f'INSERT OR REPLACE INTO `{GID}` VALUES (?, ?);', [req, res])
-                        await db.commit()
-                elif ctx[0] == 'rm':
-                    for x in ctx[1].split(' '):
-                        await db.execute(f' DELETE FROM `{GID}` WHERE request=?;', [x])
+        # check forbidden words
+        for kw in conf['command']['blacklist']:
+            if kw in event.message.text: break
+
+        # check disabled commands
+        cmd = event.message.text.split(' ', maxsplit=1)[0]
+        if cmd in conf['command']['disabled']: return
+
+        match cmd:
+            case '/help':
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=conf['command']['help']['message'])]))
+
+            case '/gpt':
+                ctx = event.message.text.split(' ', maxsplit=1)[1]
+                gpt, temp = await chatgpt.gpt35(ctx, conf['command']['gpt']['temperature'])
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{gpt.choices[0].message.content}')]))
+
+            case '/chance':
+                ctx = event.message.text.split(' ', maxsplit=1)
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {round(games.chance(), 2):.0%}')]))
+
+            case '/dice':
+                n = re.search(r'\d+', event.message.text)
+                if (n is None) and (event.message.text == '/dice'): n = 6
+                else:
+                    n = int(n.group(0))
+                    if n <= 1: return
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{games.dice(n)}')]))
+
+            case '/fortune':
+                ctx = event.message.text.split(' ', maxsplit=1)
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {games.fortune()}')]))
+
+            case '/pick':
+                ctx = event.message.text.split(' ')
+                if len(ctx) > 1:
+                    await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'選擇: {games.pick(list(ctx[1:]))}')]))
+
+            case '/fbid':
+                async with aiohttp.ClientSession() as session:
+                    ctx = event.message.text.split(' ', maxsplit=1)[1]
+                    async with session.get(f'https://www.facebook.com/plugins/post.php?href={urllib.parse.quote_plus(ctx)}') as response:
+                        s = pq(await response.text())
+                        url = s('a._39g5').attr('href')
+                        if not url:
+                            url = s('a._2q21').attr('href')
+                        if url:
+                            if 'permalink.php?story_fbid=' in url:
+                                post, page = re.search(r'/permalink.php\?story_fbid=(\d+)&id=(\d+)', url).group(1, 2)
+                                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f"https://www.facebook.com/{page}/posts/{post}")]))
+                            else:
+                                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f"https://www.facebook.com{url.split('?')[0]}")]))
+                        else:
+                            await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text="Not found")]))
+
+            case '/echo':
+                ctx = event.message.text.split(' ', maxsplit=2)[1:]
+                async with aiosqlite.connect('data/echo.db') as db:
+                    await db.execute(f'CREATE TABLE IF NOT EXISTS  `{GID}` ("request" UNIQUE, "response");')
                     await db.commit()
-                elif ctx[0] == 'reset':
-                    await db.execute(f' DELETE FROM `{GID}`;')
-                    await db.commit()
-        elif re.match('/stat', event.message.text):
-            start, end, *_ = event.message.text.split(' ', maxsplit=3)[1:]
-            start = dateutil.parser.parse(start)
-            end = dateutil.parser.parse(end)
-            L = list()
-            async with aiosqlite.connect(f'data/messages.db') as db:
-                async with db.execute(f'SELECT user, COUNT(*) FROM `{GID}` WHERE time>={int(start.timestamp())*1000} and time<{int(end.timestamp())*1000}  GROUP BY user  ORDER BY  2 DESC;') as cur:
-                    async for row in cur:
-                        try:
-                            profile = await get_user_profile(row[0], GID)
-                            name = getattr(profile, "display_name", row[0])
-                            L.append(f'{name}: {row[1]}')
-                        except:
-                            continue
-            text = f'{start.strftime("%Y/%m/%d %H:%M:%S")}~{end.strftime("%Y/%m/%d %H:%M:%S")}\n'
-            if L:
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + '\n'.join(L))]))
-            else:
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + 'None')]))
+                    subcmd = event.message.text.split(' ', maxsplit=2)[1]
+                    match subcmd:
+                        case 'ls':
+                            async with db.execute(f'SELECT * FROM `{GID}`;') as cur:
+                                L = [f'{row[0]} -> {row[1]}' async for row in cur]
+                            if len(L) > 0: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: \n' + '\n'.join(L))]))
+                            else: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: None')]))
+
+                        case 'add':
+                            _, _, req, res = event.message.text.split(' ', maxsplit=3)
+                            if req.startswith('/'):
+                                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='不可以使用"/"開頭')]))
+                            else:
+                                await db.execute(f'INSERT OR REPLACE INTO `{GID}` VALUES (?, ?);', [req, res])
+                                await db.commit()
+
+                        case 'rm':
+                            for x in event.message.text.split(' ')[2:]:
+                                await db.execute(f' DELETE FROM `{GID}` WHERE request=?;', [x])
+                            await db.commit()
+
+                        case 'reset':
+                            await db.execute(f' DELETE FROM `{GID}`;')
+                            await db.commit()
+
+            case '/stat':
+                _, start, end, *_ = event.message.text.split(' ', maxsplit=3)
+                start = dateutil.parser.parse(start)
+                end = dateutil.parser.parse(end)
+                L = list()
+                async with aiosqlite.connect(f'data/messages.db') as db:
+                    async with db.execute(f'SELECT user, COUNT(*) FROM `{GID}` WHERE time>={int(start.timestamp())*1000} and time<{int(end.timestamp())*1000}  GROUP BY user  ORDER BY  2 DESC;') as cur:
+                        i = 1
+                        async for row in cur:
+                            try:
+                                profile = await get_user_profile(row[0], GID)
+                                name = getattr(profile, "display_name", row[0])
+                                L.append(f'({i}) {name}: {row[1]}')
+                                i += 1
+                            except:
+                                continue
+                text = f'Start: {start.strftime("%Y/%m/%d %H:%M:%S")}' + '\n' + f'End: {end.strftime("%Y/%m/%d %H:%M:%S")}\n'
+                if L:
+                    await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + '\n'.join(L))]))
+                else:
+                    await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + 'None')]))
 
     async def echo():
         async with aiosqlite.connect('data/echo.db') as db:
@@ -127,17 +175,15 @@ async def handle_message(event: MessageEvent):
             except Exception as E:
                 pass
 
-        if event.message.type == 'text': content = event.message.text
+        content = None
+        if event.message.type == 'text':
+            if conf['record_message']['text']: content = event.message.text
         elif event.message.type == 'sticker': content = event.message.sticker_id
         elif event.message.type in ['image', 'video', 'audio']:
-            content = None
             if event.message.content_provider.type == 'line':
-                if conf['download']: await download()
+                if conf['record_message']['download']: await download()
         elif event.message.type == 'file':
-            content = None
-            if conf['download']: await download()
-        else:
-            pass
+            if conf['record_message']['download']: await download()
         async with aiosqlite.connect(f'data/messages.db') as db:
             await db.execute(f'CREATE TABLE IF NOT EXISTS `{GID}` (id, time, user, type, content);')
             await db.execute(f'INSERT INTO `{GID}` VALUES (?,?,?,?,?);', [event.message.id, event.timestamp, event.source.user_id, event.message.type, content])
@@ -148,8 +194,10 @@ async def handle_message(event: MessageEvent):
         GID = event.source.group_id if event.source.type == 'group' else event.source.room_id if event.source.type == 'room' else event.source.user_id
         await record_message()
         if event.message.type == 'text':
-            if event.message.text.startswith('/'): await command()
-            else: await echo()
+            if event.message.text.startswith('/'):  # command
+                await command()
+            else:
+                await echo()
 
 
 @handler.add(MemberJoinedEvent)

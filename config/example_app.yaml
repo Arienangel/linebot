@@ -3,18 +3,23 @@ app:
     port: 5000
     channel_access_token: ""
     channel_secret: ""
-  download: True # download attachment
+  record_message:
+    download: True # download attachment
+    text: True # save text message
   command: # bot commmand
+    disabled: [] # disable command
+    blacklist: [] # forbidden words
     help:
       message: |
         使用說明
         /help: 使用說明
         /stat [開始日期] [結束日期]: 統計數據
         /gpt: 聊天機器人
-        /chance (事項1 事項2 事項3...)
-        /dice
-        /fortune (事項1 事項2 事項3...)
+        /chance (事項)
+        /dice (數字)
+        /fortune (事項)
         /pick [選項1] (選項2 選項3...)
+        /fbid [網址]: FB網址轉換
         /echo
           ls
           add [input] [output]
