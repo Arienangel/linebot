@@ -27,15 +27,14 @@ app:
           reset
     gpt:
       temperature: [0.8, 1.2] # number or [min, max]
-
+    chance: [0.2, 0.8]
+    fortune:
+      key: ["大吉", "吉", "小吉", "尚可", "小兇", "兇", "大凶"]
+      ratio: [0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05]
+    reload:
+      permission: []
+      
 # module: chatgpt
 chatgpt:
   token: ""
   max_tokens: 1000
-
-# module: games
-games:
-  chance: [0.2, 0.8]
-  fortune:
-    key: ["大吉", "吉", "小吉", "尚可", "小兇", "兇", "大凶"]
-    sep: [0, 0.05, 0.15, 0.35, 0.65, 0.85, 0.95, 1]

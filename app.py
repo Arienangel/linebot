@@ -1,26 +1,31 @@
 import os
 import re
+import urllib.parse
 
 import aiofiles
-import aiosqlite
 import aiohttp
+import aiosqlite
 import dateutil.parser
 import dateutil.relativedelta
-import urllib.parse
+import numpy as np
 import yaml
 from flask import Flask, abort, request
 from pyquery import PyQuery as pq
 
 import chatgpt
-import games
 from aiolinebot_handler import AsyncWebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import AsyncApiClient, AsyncMessagingApi, AsyncMessagingApiBlob, Configuration, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, MemberJoinedEvent
+from linebot.v3.messaging import (AsyncApiClient, AsyncMessagingApi, AsyncMessagingApiBlob, Configuration, ReplyMessageRequest, TextMessage)
+from linebot.v3.webhooks import MemberJoinedEvent, MessageEvent
 
-with open('config/app.yaml', encoding='utf-8') as f:
-    conf = yaml.load(f, yaml.SafeLoader)['app']
 
+def load_config():
+    global conf
+    with open('config/app.yaml', encoding='utf-8') as f:
+        conf = yaml.load(f, yaml.SafeLoader)['app']
+
+
+load_config()
 app = Flask(__name__)
 configuration = Configuration(access_token=conf['bot']['channel_access_token'])
 handler = AsyncWebhookHandler(conf['bot']['channel_secret'])
@@ -60,24 +65,27 @@ async def handle_message(event: MessageEvent):
 
             case '/chance':
                 ctx = event.message.text.split(' ', maxsplit=1)
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {round(games.chance(), 2):.0%}')]))
+                start, end = sorted(conf['command']['chance'])
+                res = np.random.randint(low=start * 100, high=end * 100)
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "機率"}: {res}%')]))
 
             case '/dice':
                 n = re.search(r'\d+', event.message.text)
-                if (n is None) and (event.message.text == '/dice'): n = 6
+                if n is None and event.message.text == '/dice': n = 6
                 else:
                     n = int(n.group(0))
                     if n <= 1: return
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{games.dice(n)}')]))
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{np.random.randint(1, n)}')]))
 
             case '/fortune':
                 ctx = event.message.text.split(' ', maxsplit=1)
-                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {games.fortune()}')]))
+                res = np.random.choice(conf['command']['fortune']['key'], p=conf['command']['fortune']['ratio'])
+                await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'{ctx[-1] if len(ctx)>1 else "運勢"}: {res}')]))
 
             case '/pick':
-                ctx = event.message.text.split(' ')
+                _, *ctx = event.message.text.split(' ')
                 if len(ctx) > 1:
-                    await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'選擇: {games.pick(list(ctx[1:]))}')]))
+                    await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=f'選擇: {np.random.choice(ctx)}')]))
 
             case '/fbid':
                 async with aiohttp.ClientSession() as session:
@@ -105,7 +113,7 @@ async def handle_message(event: MessageEvent):
                     match subcmd:
                         case 'ls':
                             async with db.execute(f'SELECT * FROM `{GID}`;') as cur:
-                                L = [f'{row[0]} -> {row[1]}' async for row in cur]
+                                L = [f'{row[0]} → {row[1]}' async for row in cur]
                             if len(L) > 0: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: \n' + '\n'.join(L))]))
                             else: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='echo: None')]))
 
@@ -123,8 +131,17 @@ async def handle_message(event: MessageEvent):
                             await db.commit()
 
                         case 'reset':
+                            async with db.execute(f'SELECT * FROM `{GID}`;') as cur:
+                                L = [f'{row[0]} → {row[1]}' async for row in cur]
+                            if len(L) > 0: await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='deleted: \n' + '\n'.join(L))]))
                             await db.execute(f' DELETE FROM `{GID}`;')
                             await db.commit()
+
+                        case 'backup':
+                            ...
+
+                        case 'restore':
+                            ...
 
             case '/stat':
                 _, start, end, *_ = event.message.text.split(' ', maxsplit=3)
@@ -147,6 +164,14 @@ async def handle_message(event: MessageEvent):
                     await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + '\n'.join(L))]))
                 else:
                     await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text=text + 'None')]))
+
+            case '/reload':
+                if GID in conf['command']['reload']['permission']:
+                    try:
+                        load_config()
+                        await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='Reload finished')]))
+                    except:
+                        await line_bot_api.reply_message(ReplyMessageRequest(replyToken=event.reply_token, messages=[TextMessage(text='Reload failed')]))
 
     async def echo():
         async with aiosqlite.connect('data/echo.db') as db:
